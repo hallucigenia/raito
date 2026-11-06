@@ -1,7 +1,7 @@
 # Raito settings. Push with: bin/raito config raito.conf
 # Command-line flags override these values; unknown keys are rejected.
 
-# Hyperion or HyperHDR host running the FlatBuffers server (required).
+# Hyperion.ng host running the FlatBuffers server (required). Other servers are untested.
 host=192.168.1.10
 port=19400
 

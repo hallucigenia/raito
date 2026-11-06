@@ -2,9 +2,9 @@
 
 Raito is an ambient-light screen grabber for **Android TV and Google TV** that runs on the
 TV itself. It is started over ADB as the ordinary shell user. It screenshots the physical
-display, scales it to about 160×90 and sends frames straight to
-[Hyperion](https://github.com/hyperion-project/hyperion.ng) (or a compatible FlatBuffers
-server) on your network. No root, no app install, no PC relaying video.
+display, scales it to about 160×90 and sends frames straight to a
+[Hyperion](https://github.com/hyperion-project/hyperion.ng) server on your network. No root,
+no app install, no PC relaying video.
 
 Why: grabbers built on MediaProjection, and scrcpy-style virtual displays, often go black on
 a TV's **HDMI input** because the video sits on a separate hardware layer. A physical-display
@@ -47,15 +47,37 @@ Android 12 and later renamed them, and there it reports itself unsupported until
 backend is added. `screencap` is a slow fallback that works more widely. `probe` shows which
 backends work and how fast they are.
 
+**Servers:** tested with Hyperion.ng 2.x. HyperHDR and other FlatBuffers servers are untested.
+Raito expects Hyperion's registration reply and its FlatBuffers priority range (100–199), so
+another server may refuse the connection as is. Reports are welcome.
+
 ## Quick start
 
-Requirements: ADB debugging enabled on the TV (Developer options; network debugging for
-wireless), `adb` on your computer, and a Hyperion instance with the FlatBuffers server enabled
-(default port 19400).
+Requirements:
+
+* ADB debugging enabled in the TV's Developer options.
+* `adb` (Android platform-tools) on your computer.
+* A POSIX shell for `build.sh` and `bin/raito`. macOS and Linux work as is. On Windows, use WSL
+  or Git Bash.
+* A Hyperion instance with the FlatBuffers server enabled (default port 19400).
+
+Connect to the TV over the network first and accept the authorization prompt on screen:
+
+```sh
+# TVs with a network / ADB-over-network debugging switch (fixed port 5555):
+adb connect 192.168.1.20:5555
+
+# Android 11+ "Wireless debugging": pair once with the pairing code and port from
+# "Pair device with pairing code", then connect to the port shown on the Wireless debugging
+# screen. The two ports differ and can change when debugging is toggled.
+adb pair 192.168.1.20:37099
+adb connect 192.168.1.20:41235
+```
+
+Then build, install and try it:
 
 ```sh
 ./build.sh                          # or download a release jar (not yet published)
-adb connect 192.168.1.20:5555       # your TV; accept the authorization prompt on screen
 bin/raito install build/raito.jar
 
 bin/raito probe                     # play moving HDMI video while this runs
