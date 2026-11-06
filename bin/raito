@@ -1,0 +1,107 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Host-side helper for Raito: installs it on an Android device over ADB and
+# forwards commands to the device launcher. Uses the adb on PATH (or $ADB); pass -s SERIAL
+# or set ANDROID_SERIAL when more than one device is connected.
+set -eu
+
+DIR=/data/local/tmp/raito
+ADB=${ADB:-adb}
+HERE=$(cd "$(dirname "$0")/.." && pwd)
+serial=
+
+usage() {
+    cat >&2 <<'EOF'
+Usage: raito [-s SERIAL] install JAR       push the build and launcher (does not restart)
+       raito [-s SERIAL] config FILE       push raito.conf (see config/raito.conf.example)
+       raito [-s SERIAL] probe [--backend all|surface|screencap] [--frames N] [--width N]
+       raito [-s SERIAL] enable|disable    allow or forbid running, then start or stop
+       raito [-s SERIAL] start|stop|restart|status|health|report|log [N]|version
+       raito [-s SERIAL] uninstall         stop and remove everything from the device
+EOF
+    exit 2
+}
+
+die() {
+    echo "raito: $*" >&2
+    exit 1
+}
+
+adb_() {
+    if [ -n "$serial" ]; then "$ADB" -s "$serial" "$@"; else "$ADB" "$@"; fi
+}
+
+# Single-quotes one argument for the device shell.
+quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+device() {
+    line="sh $DIR/raito.sh"
+    for argument in "$@"; do line="$line $(quote "$argument")"; done
+    adb_ shell "$line"
+}
+
+sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+
+install_build() {
+    jar=$1
+    [ -f "$jar" ] || die "no such jar: $jar"
+    digest=$(sha256 "$jar")
+    remote="$DIR/jars/raito-$(printf '%s' "$digest" | cut -c1-12).jar"
+    adb_ shell "mkdir -p $DIR/jars && chmod 700 $DIR"
+    adb_ push "$jar" "$remote.next" >/dev/null
+    actual=$(adb_ shell "sha256sum $remote.next" | tr -d '\r' | cut -d' ' -f1)
+    if [ "$actual" != "$digest" ]; then
+        adb_ shell "rm -f $remote.next"
+        die "pushed jar digest does not match"
+    fi
+    adb_ shell "mv $remote.next $remote"
+    adb_ push "$HERE/device/raito.sh" "$DIR/raito.sh.next" >/dev/null
+    adb_ shell "chmod 700 $DIR/raito.sh.next && mv $DIR/raito.sh.next $DIR/raito.sh"
+    adb_ shell "echo $remote >$DIR/current.next && mv $DIR/current.next $DIR/current"
+    echo "installed $remote"
+    if ! adb_ shell "test -f $DIR/raito.conf"; then
+        echo "next: raito config FILE, then raito enable"
+    else
+        echo "a running Raito keeps the old build until: raito restart"
+    fi
+}
+
+push_config() {
+    file=$1
+    [ -f "$file" ] || die "no such config: $file"
+    grep -q '^[[:space:]]*host[[:space:]]*[=:[:space:]]' "$file" || die "$file does not set host"
+    adb_ shell "mkdir -p $DIR && chmod 700 $DIR"
+    adb_ push "$file" "$DIR/raito.conf.next" >/dev/null
+    adb_ shell "chmod 600 $DIR/raito.conf.next && mv $DIR/raito.conf.next $DIR/raito.conf"
+    echo "config updated; apply with: raito restart"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -s) [ $# -ge 2 ] || usage; serial=$2; shift 2 ;;
+        -h | --help) usage ;;
+        *) break ;;
+    esac
+done
+[ $# -gt 0 ] || usage
+command=$1
+shift
+
+case "$command" in
+    install) [ $# -eq 1 ] || usage; install_build "$1" ;;
+    config) [ $# -eq 1 ] || usage; push_config "$1" ;;
+    start | stop | restart | enable | disable | status | health | report | version)
+        [ $# -eq 0 ] || usage
+        device "$command" ;;
+    log | probe) device "$command" "$@" ;;
+    uninstall)
+        [ $# -eq 0 ] || usage
+        device disable || true
+        adb_ shell "rm -rf $DIR"
+        echo "removed $DIR" ;;
+    *) usage ;;
+esac

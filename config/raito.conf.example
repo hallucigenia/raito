@@ -1,0 +1,24 @@
+# Raito settings. Push with: bin/raito config raito.conf
+# Command-line flags override these values; unknown keys are rejected.
+
+# Hyperion or HyperHDR host running the FlatBuffers server (required).
+host=192.168.1.10
+port=19400
+
+# Hyperion 2.x accepts FlatBuffers priorities 100-199; lower numbers win.
+priority=150
+
+# Name shown in Hyperion's input list.
+origin=Raito
+
+# Capture width in pixels (height follows the screen aspect ratio). LEDs rarely need more than 160.
+width=160
+
+# Target frames per second. Capture time caps this (~65 ms on the first verified TV, so ~12-15); probe shows yours.
+fps=12
+
+# surface (fast, Android 10/11) or screencap (slow diagnostic fallback). Run probe to compare.
+backend=surface
+
+# How long Hyperion keeps showing a frame if no new one arrives.
+frame_duration_ms=1500
