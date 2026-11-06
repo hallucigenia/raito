@@ -9,7 +9,7 @@ import java.util.Arrays;
  * {@code CLASSPATH=raito.jar app_process / io.github.hallucigenia.raito.Main <command> ...}.
  */
 public final class Main {
-    static final String VERSION = "0.1.0-dev";
+    static final String VERSION = "0.1.0";
     static final int EXIT_ERROR = 1;
     static final int EXIT_USAGE = 2;
     static final int EXIT_ALREADY_RUNNING = 3;
