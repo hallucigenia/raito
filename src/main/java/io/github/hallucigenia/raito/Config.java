@@ -12,9 +12,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Properties;
 
-/** Validated settings for the {@code run} command: defaults, then the config file, then flags. */
+/**
+ * Validated settings for the {@code run} command: defaults, then the config file, then flags.
+ * The state directory is a flag only ({@code --state-dir}): the device launcher owns it and
+ * always passes it, so a config file value could never take effect.
+ */
 final class Config {
     static final String DEFAULT_STATE_DIR = "/data/local/tmp/raito";
+    static final String CONFIG_FLAG = "config";
+    static final String STATE_DIR_FLAG = "state_dir";
     /** Hyperion 2.x accepts FlatBuffers clients only in this priority range. */
     static final int MIN_PRIORITY = 100;
     static final int MAX_PRIORITY = 199;
@@ -37,7 +43,6 @@ final class Config {
         defaults.put("fps", "12");
         defaults.put("backend", Captures.SURFACE);
         defaults.put("frame_duration_ms", "1500");
-        defaults.put("state_dir", DEFAULT_STATE_DIR);
         DEFAULTS = Collections.unmodifiableMap(defaults);
     }
 
@@ -51,8 +56,11 @@ final class Config {
     final int frameDurationMs;
     final String stateDir;
 
-    private Config(Map<String, String> values) {
+    private Config(Map<String, String> values, String stateDir) {
         for (String key : values.keySet()) {
+            if (STATE_DIR_FLAG.equals(key)) {
+                throw new IllegalArgumentException("state_dir is not a config file setting; the launcher passes --state-dir");
+            }
             if (!DEFAULTS.containsKey(key)) throw new IllegalArgumentException("Unknown setting " + key);
         }
         host = text(values, "host", 253);
@@ -67,19 +75,26 @@ final class Config {
             throw new IllegalArgumentException("backend must be one of " + Captures.NAMES + ", got " + backend);
         }
         frameDurationMs = Options.integer(values, "frame_duration_ms", MIN_FRAME_DURATION_MS, MAX_FRAME_DURATION_MS);
-        stateDir = text(values, "state_dir", 4096);
-        if (!stateDir.startsWith("/")) throw new IllegalArgumentException("state_dir must be an absolute path");
+        this.stateDir = stateDir;
     }
 
     static Config parse(String[] args) {
         Map<String, String> flags = Options.parse(args);
         Map<String, String> values = new HashMap<String, String>(DEFAULTS);
-        String file = flags.get("config");
+        String file = flags.get(CONFIG_FLAG);
         if (file != null) values.putAll(load(file));
         for (Map.Entry<String, String> flag : flags.entrySet()) {
-            if (!flag.getKey().equals("config")) values.put(flag.getKey(), flag.getValue());
+            String key = flag.getKey();
+            if (!key.equals(CONFIG_FLAG) && !key.equals(STATE_DIR_FLAG)) values.put(key, flag.getValue());
         }
-        return new Config(values);
+        return new Config(values, stateDir(flags));
+    }
+
+    private static String stateDir(Map<String, String> flags) {
+        if (!flags.containsKey(STATE_DIR_FLAG)) return DEFAULT_STATE_DIR;
+        String dir = text(flags, STATE_DIR_FLAG, 4096);
+        if (!dir.startsWith("/")) throw new IllegalArgumentException("--state-dir must be an absolute path");
+        return dir;
     }
 
     String describe() {

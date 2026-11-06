@@ -38,6 +38,22 @@ public final class ConfigTest {
         Check.equal("/tmp/grabber", config.stateDir, "state dir flag");
     }
 
+    public void rejects_state_dir_in_config_file() throws Exception {
+        File file = File.createTempFile("raito", ".conf");
+        file.deleteOnExit();
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            out.write("host=h\nstate_dir=/sdcard/raito\n".getBytes(StandardCharsets.UTF_8));
+        }
+        IllegalArgumentException e = Check.fails(IllegalArgumentException.class,
+            () -> Config.parse(new String[] {"--config", file.getPath()}), "state_dir is launcher-owned");
+        Check.isTrue(e.getMessage().contains("state_dir"), "message names the key");
+    }
+
+    public void rejects_relative_state_dir_flag() {
+        Check.fails(IllegalArgumentException.class,
+            () -> Config.parse(new String[] {"--host", "h", "--state-dir", "raito"}), "relative path");
+    }
+
     public void rejects_missing_host() {
         IllegalArgumentException e = Check.fails(IllegalArgumentException.class,
             () -> Config.parse(new String[0]), "missing host");
