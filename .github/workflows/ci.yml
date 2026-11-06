@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: ./.github/actions/setup-build
+
+      - name: Lint shell scripts
+        run: shellcheck -s sh build.sh bin/raito device/raito.sh
+
+      - name: Test and package
+        run: ./build.sh dist
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: raito-${{ github.sha }}
+          path: build/dist/
+          if-no-files-found: error

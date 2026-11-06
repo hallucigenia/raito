@@ -1,0 +1,22 @@
+name: Set up Raito build
+description: JDK 17 and a pinned, checksum-verified R8 (for d8); exports R8_JAR.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78  # v6.2.0
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Fetch R8
+      shell: bash
+      env:
+        R8_VERSION: 8.3.37
+        R8_SHA256: 59753e70a74f918389cc87f1b7d66b5c0862932559167425708ded159e3de439
+      run: |
+        jar="$RUNNER_TEMP/r8-$R8_VERSION.jar"
+        curl -fsSL --retry 3 -o "$jar" \
+          "https://dl.google.com/android/maven2/com/android/tools/r8/$R8_VERSION/r8-$R8_VERSION.jar"
+        echo "$R8_SHA256  $jar" | sha256sum -c -
+        echo "R8_JAR=$jar" >>"$GITHUB_ENV"

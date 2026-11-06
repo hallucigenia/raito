@@ -57,8 +57,8 @@ Requirements:
 
 * ADB debugging enabled in the TV's Developer options.
 * `adb` (Android platform-tools) on your computer.
-* A POSIX shell for `build.sh` and `bin/raito`. macOS and Linux work as is. On Windows, use WSL
-  or Git Bash.
+* A POSIX shell for `bin/raito` (and `build.sh` if you build from source). macOS and Linux work
+  as is. On Windows, use WSL or Git Bash.
 * A Hyperion instance with the FlatBuffers server enabled (default port 19400).
 
 Connect to the TV over the network first and accept the authorization prompt on screen:
@@ -74,11 +74,13 @@ adb pair 192.168.1.20:37099
 adb connect 192.168.1.20:41235
 ```
 
-Then build, install and try it:
+Then download `raito-<version>.tar.gz` and `SHA256SUMS` from
+[Releases](https://github.com/hallucigenia/raito/releases), install and try it:
 
 ```sh
-./build.sh                          # or download a release jar (not yet published)
-bin/raito install build/raito.jar
+shasum -a 256 -c SHA256SUMS --ignore-missing   # or: sha256sum -c SHA256SUMS --ignore-missing
+tar xzf raito-<version>.tar.gz && cd raito-<version>
+bin/raito install raito.jar
 
 bin/raito probe                     # play moving HDMI video while this runs
 cp config/raito.conf.example raito.conf   # set host= to your Hyperion
@@ -86,6 +88,9 @@ bin/raito config raito.conf
 bin/raito enable                    # allow running and start now
 bin/raito report
 ```
+
+To build from source instead, run `./build.sh` in a clone and install `build/raito.jar` (see
+[Development](#development)).
 
 With more than one ADB device, add `-s SERIAL` or set `ANDROID_SERIAL`.
 
@@ -132,7 +137,16 @@ See [`config/raito.conf.example`](config/raito.conf.example). Keys: `host` (requ
 ```sh
 ./build.sh test    # compile and run host tests (JDK only)
 ./build.sh         # tests + DEX jar; needs D8, R8_JAR, or ANDROID_HOME with build-tools
+./build.sh dist    # tests + jar + build/dist/{raito-<version>.tar.gz, raito-<version>.jar, SHA256SUMS}
 ```
+
+CI builds every push and pull request with JDK 17 and a pinned, checksum-verified R8 8.3.37
+(see `.github/actions/setup-build`), and uploads the `dist` output as a workflow artifact.
+
+**Releasing:** set `VERSION` in `Main.java`, commit, then push a matching tag such as `v0.2.0`.
+The Release workflow refuses a tag that differs from `VERSION`. It runs the tests and publishes
+the tarball, the jar and `SHA256SUMS`. Versions `0.x` and those with a suffix are marked as
+pre-releases.
 
 The code targets Java 8 with `--min-api 26` and no desugaring, so main sources avoid lambdas.
 Android classes are only reached through reflection, so everything except the capture backends
