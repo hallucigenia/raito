@@ -9,7 +9,8 @@ no app install, no PC relaying video.
 Why: grabbers built on MediaProjection, and scrcpy-style virtual displays, often go black on
 a TV's **HDMI input** because the video sits on a separate hardware layer. A physical-display
 screenshot taken from the shell user can include that layer, depending on the TV's SoC and
-firmware. Raito's `probe` command tells you in a few seconds whether your TV does.
+firmware, and a system update can change the answer. Raito's `probe` command tells you in a few
+seconds whether your TV does.
 
 > **Status: early.** It has been verified on one TV so far. Please run `probe` on yours and
 > share the result. That report is the most useful contribution right now.
@@ -41,11 +42,20 @@ other systems cannot run it, including Samsung (Tizen), LG (webOS) and Roku.
 | Device | Android | Backend | HDMI capture | Notes |
 | --- | --- | --- | --- | --- |
 | Xiaomi MiTV-MFTR0 | 11 (API 30) | surface | ✅ SDR, HDR10, TV-led Dolby Vision | ~12 fps at 160×90, ~65 ms per capture |
+| Xiaomi MiTV-MFTR0 | 14 (API 34) | — | ❌ black | Same TV after a system update. The Android 14 screenshot call, `screencap` and MediaProjection all return black for HDMI video. Only vendor-private paths, which Raito does not use, see it. |
 
-The fast `surface` backend currently uses the Android 10/11 hidden `SurfaceControl` methods.
-Android 12 and later renamed them, and there it reports itself unsupported until a matching
-backend is added. `screencap` is a slow fallback that works more widely. `probe` shows which
-backends work and how fast they are.
+The fast `surface` backend picks the hidden screenshot API that the firmware provides:
+`SurfaceControl.screenshot` on Android 9–11, `SurfaceControl.captureDisplay` on 12–13, and
+`ScreenCapture.captureDisplay` on 14 and later. The Android 11 row was measured with the code
+Raito was extracted from. The Android 14 row was measured with a stand-alone probe making the same
+calls as `surface`, at about 12 ms per 160×90 frame. Android 12 and 13 are untested on hardware.
+`screencap` is a slow fallback.
+`probe` shows which backends work, which API they use and how fast they are. Run it again after a
+system update.
+
+On Android 14 and later, `surface` loads a system-server library to find the display. On one TV,
+a test program doing the same crashed while exiting (`Segmentation fault`, exit status 139). If
+Raito does too, the output printed before that is still complete.
 
 **Servers:** tested with Hyperion.ng 2.x. HyperHDR and other FlatBuffers servers are untested.
 Raito expects Hyperion's registration reply and its FlatBuffers priority range (100–199), so
@@ -110,7 +120,9 @@ With more than one ADB device, add `-s SERIAL` or set `ANDROID_SERIAL`.
 
 `healthy` means a frame was acknowledged by Hyperion within the last 10 seconds. The heartbeat
 is only refreshed by acknowledged frames, never by retries. A supervisor can use it to decide
-whether to switch on LED output.
+whether to switch on LED output. When it is not healthy, switch the LED controller itself off as
+well as Hyperion's output. Controllers such as WLED fall back to their own saved colour once live
+data stops, so the strip stays lit.
 
 ## Restarting after a TV reboot
 
@@ -118,6 +130,11 @@ Without root, nothing on the TV can start a shell-user process at boot. Somethin
 access must run `start` again, such as the Home Assistant Android Debug Bridge integration, a
 cron job on the Hyperion host (`adb connect … && bin/raito start`), or Shizuku. `start` is
 safe to call repeatedly. It respects `disable` and does nothing in standby.
+
+* Some vendor firmware switches ADB debugging off at every boot. Nothing can start Raito until it
+  is switched back on.
+* Don't launch an app or activity (`am start`, `monkey`) from a background recovery job. On some
+  TVs that wakes the screen from standby.
 
 ## Security notes
 
@@ -149,8 +166,10 @@ the tarball, the jar and `SHA256SUMS`. Versions `0.x` and those with a suffix ar
 pre-releases.
 
 The code targets Java 8 with `--min-api 26` and no desugaring, so main sources avoid lambdas.
-Android classes are only reached through reflection, so everything except the capture backends
-and `DisplayPower` runs and is tested on a normal JVM. Tests use a tiny built-in runner
+Android classes are only reached through reflection, so the code runs and is tested on a normal
+JVM. Test-only stubs of the few framework classes involved (`src/test/java/android`) let the
+screenshot code run there as well. They never reach the jar. Only `DisplayPower`, `screencap` and
+the Android 14 `DisplayControl` loader need a real device. Tests use a tiny built-in runner
 (`src/test/java/io/github/hallucigenia/raito/TestRunner.java`) to keep the build dependency-free.
 
 | Path | Role |
@@ -158,6 +177,7 @@ and `DisplayPower` runs and is tested on a normal JVM. Tests use a tiny built-in
 | `src/main/java/io/github/hallucigenia/raito/Forwarder.java` | Capture → send loop, standby, backoff |
 | `HyperionProtocol.java`, `HyperionClient.java` | Hand-encoded FlatBuffers and the acknowledged connection |
 | `SurfaceCapture.java`, `ScreencapCapture.java` | Capture backends |
+| `LegacyScreenshot.java`, `DisplayCaptureScreenshot.java`, `DisplayToken.java` | Screenshot API generations used by `surface` |
 | `Probe.java`, `FrameStats.java` | Compatibility report |
 | `device/raito.sh` | On-device launcher (enable flag, pid ownership, health, report) |
 | `bin/raito` | Host-side install and command forwarding |
