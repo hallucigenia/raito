@@ -65,6 +65,8 @@ final class Probe {
         String source = null;
         String error = null;
         try (Capture capture = Captures.forBackend(backend).open()) {
+            // Read before the first frame too, so a failing capture still reports the API it chose.
+            source = capture.describe();
             for (int i = 0; i < frames; i++) {
                 long started = System.nanoTime();
                 Frame frame = capture.frame(width);

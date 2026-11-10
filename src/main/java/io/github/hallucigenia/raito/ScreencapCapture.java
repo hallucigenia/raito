@@ -62,9 +62,9 @@ final class ScreencapCapture implements Capture {
                 throw new IOException("screencap failed to finish");
             }
             lastSource = "screencap display=" + sourceWidth + "x" + sourceHeight;
-            int width = Math.min(sourceWidth, targetWidth);
-            int height = Math.max(1, (int) ((long) sourceHeight * width / sourceWidth));
-            return new Frame(Pixels.sample(pixels, sourceWidth, sourceHeight, width, height), width, height);
+            Size size = Size.fit(sourceWidth, sourceHeight, targetWidth);
+            return new Frame(Pixels.sample(pixels, sourceWidth, sourceHeight, size.width, size.height),
+                size.width, size.height);
         } finally {
             timeout.cancel(false);
             process.getInputStream().close();

@@ -29,11 +29,12 @@ final class Captures {
     }
 
     /**
-     * True when a backend cannot work on this firmware at all (missing hidden API), as opposed
-     * to a transient failure reported by an API call that exists.
+     * True when a backend cannot work on this firmware at all (missing hidden API, or a method
+     * whose native or internal code is missing), as opposed to a transient failure reported by an
+     * API call that exists.
      */
     static boolean isUnsupported(Exception error) {
-        return error instanceof UnsupportedOperationException
-            || (error instanceof ReflectiveOperationException && !(error instanceof InvocationTargetException));
+        if (error instanceof InvocationTargetException) return error.getCause() instanceof LinkageError;
+        return error instanceof UnsupportedOperationException || error instanceof ReflectiveOperationException;
     }
 }

@@ -1,78 +1,74 @@
 // SPDX-License-Identifier: Apache-2.0
 package io.github.hallucigenia.raito;
 
-import java.io.IOException;
-import java.lang.reflect.Array;
-import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
- * Physical-display screenshot through the Android 10/11 {@code SurfaceControl} API, scaled by
- * SurfaceFlinger and copied into a software bitmap. It needs no virtual display and no
- * MediaProjection, and excludes secure layers. Android 12 and later changed these hidden
- * methods; there this backend reports itself unsupported (see {@code probe}).
+ * Physical-display screenshot through SurfaceFlinger's hidden screenshot API, scaled on the GPU and
+ * copied into a software bitmap. It needs no virtual display and no MediaProjection, and excludes
+ * secure layers. Whether a TV's HDMI video layer is included depends on its SoC and firmware.
  */
 final class SurfaceCapture implements Capture {
-    private final Class<?> rect;
-    private final Method screenshot;
-    private final Method copy;
-    private final Method getPixels;
-    private final Method recycle;
-    private final Object argb8888;
-    private final int displayWidth;
-    private final int displayHeight;
-    private int[] pixels;
+    private final BuiltInDisplay display;
+    private final ScreenshotApi api;
 
     SurfaceCapture() throws Exception {
-        Class<?> surfaceControl = Class.forName("android.view.SurfaceControl");
-        Class<?> bitmap = Class.forName("android.graphics.Bitmap");
-        Class<?> config = Class.forName("android.graphics.Bitmap$Config");
-        Class<?> binder = Class.forName("android.os.IBinder");
-        rect = Class.forName("android.graphics.Rect");
-        Object display;
-        Object configs;
-        int active;
-        try {
-            screenshot = surfaceControl.getDeclaredMethod("screenshot", rect, int.class, int.class, int.class);
-            display = surfaceControl.getMethod("getInternalDisplayToken").invoke(null);
-            if (display == null) throw new IOException("Physical display is disconnected");
-            active = (Integer) surfaceControl.getMethod("getActiveConfig", binder).invoke(null, display);
-            configs = surfaceControl.getMethod("getDisplayConfigs", binder).invoke(null, display);
-        } catch (NoSuchMethodException e) {
-            throw new UnsupportedOperationException("surface backend needs the Android 10/11 SurfaceControl API; "
-                + "this device reports API " + DeviceInfo.sdkInt() + " (missing " + e.getMessage() + ")", e);
+        display = BuiltInDisplay.query();
+        api = select(candidates(display, new Bitmaps()));
+    }
+
+    /**
+     * Oldest first: the Android 9–11 API is the one verified on hardware, so it is kept wherever it
+     * still exists; the Android 12–13 and 14+ generations follow.
+     */
+    private static List<ScreenshotApi.Factory> candidates(final BuiltInDisplay display, final Bitmaps bitmaps) {
+        return Arrays.asList(
+            new ScreenshotApi.Factory() {
+                public ScreenshotApi open() throws Exception { return new LegacyScreenshot(bitmaps); }
+            },
+            new ScreenshotApi.Factory() {
+                public ScreenshotApi open() throws Exception {
+                    return new DisplayCaptureScreenshot(DisplayCaptureScreenshot.SURFACE_CONTROL, display, bitmaps);
+                }
+            },
+            new ScreenshotApi.Factory() {
+                public ScreenshotApi open() throws Exception {
+                    return new DisplayCaptureScreenshot(DisplayCaptureScreenshot.SCREEN_CAPTURE, display, bitmaps);
+                }
+            });
+    }
+
+    /**
+     * Opens the first candidate present on this firmware. A missing API, or one whose classes or
+     * natives cannot load, moves on to the next one; any other failure is real and propagates.
+     */
+    static ScreenshotApi select(List<ScreenshotApi.Factory> candidates) throws Exception {
+        List<String> missing = new ArrayList<String>();
+        for (ScreenshotApi.Factory candidate : candidates) {
+            try {
+                return candidate.open();
+            } catch (LinkageError e) {
+                missing.add(Log.describe(e));
+            } catch (Exception e) {
+                if (!Captures.isUnsupported(e)) throw e;
+                missing.add(Log.describe(e));
+            }
         }
-        copy = bitmap.getMethod("copy", config, boolean.class);
-        getPixels = bitmap.getMethod("getPixels", int[].class, int.class, int.class,
-            int.class, int.class, int.class, int.class);
-        recycle = bitmap.getMethod("recycle");
-        argb8888 = config.getField("ARGB_8888").get(null);
-        Object mode = Array.get(configs, active);
-        displayWidth = mode.getClass().getField("width").getInt(mode);
-        displayHeight = mode.getClass().getField("height").getInt(mode);
-        if (displayWidth <= 0 || displayHeight <= 0) throw new IOException("Invalid display geometry");
+        throw new UnsupportedOperationException("surface backend found no screenshot API on API "
+            + DeviceInfo.sdkInt() + "; missing " + missing);
     }
 
     public Frame frame(int targetWidth) throws Exception {
-        int width = Math.min(targetWidth, displayWidth);
-        int height = Math.max(1, (int) ((long) displayHeight * width / displayWidth));
-        Object original = screenshot.invoke(null, rect.getConstructor().newInstance(), width, height, 0);
-        if (original == null) throw new IOException("Physical display screenshot returned null");
-        Object readable = null;
-        try {
-            // The screenshot is a hardware bitmap; copy it to software memory before reading pixels.
-            readable = copy.invoke(original, argb8888, false);
-            if (readable == null) throw new IOException("Could not read screenshot bitmap");
-            if (pixels == null || pixels.length != width * height) pixels = new int[width * height];
-            getPixels.invoke(readable, pixels, 0, width, 0, 0, width, height);
-            return new Frame(Pixels.rgb(pixels), width, height);
-        } finally {
-            if (readable != null) recycle.invoke(readable);
-            recycle.invoke(original);
-        }
+        // The display size is read once per open. A TV's logical (UI) size normally stays fixed when
+        // the HDMI output mode changes, and any capture failure or standby reopens the capture anyway.
+        Size size = Size.fit(display.width, display.height, targetWidth);
+        return api.capture(size.width, size.height);
     }
 
     public String describe() {
-        return "surface display=" + displayWidth + "x" + displayHeight;
+        return "surface api=" + api.name() + " display=" + display.size();
     }
 
     public void close() {

@@ -38,6 +38,9 @@ public final class Main {
             System.err.println("error: " + Log.describe(e));
             code = EXIT_ERROR;
         }
+        // Flush before exiting: native libraries some capture APIs load can crash the VM on exit.
+        System.out.flush();
+        System.err.flush();
         System.exit(code);
     }
 

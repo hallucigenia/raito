@@ -17,6 +17,13 @@ public final class CapturesTest {
         Check.isTrue(!Captures.isUnsupported(new IOException("Physical display is disconnected")), "io error");
     }
 
+    public void missing_native_behind_an_existing_method_is_unsupported() {
+        Check.isTrue(Captures.isUnsupported(new InvocationTargetException(new UnsatisfiedLinkError("nativeGet"))),
+            "unregistered native");
+        Check.isTrue(Captures.isUnsupported(new InvocationTargetException(new NoSuchMethodError("internal"))),
+            "framework method missing underneath");
+    }
+
     public void rejects_unknown_backend() {
         Check.fails(IllegalArgumentException.class, () -> Captures.forBackend("mediaprojection"), "unknown");
     }
